@@ -1,0 +1,30 @@
+{
+  "USERNAME1": [
+    {
+      "domain": ".x.com",
+      "hostOnly": false,
+      "httpOnly": false,
+      "name": "auth_token",
+      "path": "/",
+      "sameSite": null,
+      "secure": true,
+      "session": true,
+      "storeId": null,
+      "value": "0000000000000000000000000000000000"
+    }
+  ],
+  "USERNAME2": [
+    {
+      "domain": ".x.com",
+      "hostOnly": false,
+      "httpOnly": false,
+      "name": "auth_token",
+      "path": "/",
+      "sameSite": null,
+      "secure": true,
+      "session": true,
+      "storeId": null,
+      "value": "0000000000000000000000000000000000"
+    }
+  ]
+}

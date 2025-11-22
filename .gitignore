@@ -1,0 +1,9 @@
+/cookies/cookies.json
+.env
+.session.dat
+__pycache__
+logs
+*.log
+.vscode
+test.py
+.prettierrc
