@@ -16,10 +16,23 @@ class XBrowser(BaseBrowser):
         self.target: Optional[uc.Tab] = None
         self.tweets_to_process: List[uc.Element] = []
 
-    async def create_browser(self):
+    async def create_browser(self, index: int = 0) -> uc.Browser:
         self.browser = await super().create_browser()
-        self.target = await self.browser.get(X_URL)
+        cookie_params = self.load_auth_token_from_txt(index)
+        await self.browser.connection.send(uc.cdp.storage.set_cookies(cookie_params))
         return self.browser
+
+    async def goto_target(self, url: str = X_URL):
+        if self.browser is None:
+            raise RuntimeError("Browser not initialized. Call create_browser() first.")
+        self.target = await self.browser.get(url)
+        return self.target
+
+    async def find_and_click(self, text: str):
+        if isinstance(self.target, uc.Tab):
+            element = await self.target.find(text, best_match=True)
+            if element:
+                await element.click()
 
     async def collect_valid_tweets(self) -> List[Dict[str, Any]]:
         if (self.target is None) or (self.browser is None):
@@ -92,8 +105,8 @@ class XBrowser(BaseBrowser):
             log.error(f"Error loading tweets: {e}")
 
     async def like_tweet(self):
-        if isinstance(self.page, uc.Tab):
-            like_button = await self.page.select(
+        if isinstance(self.target, uc.Tab):
+            like_button = await self.target.select(
                 'button[data-testid="like"]', timeout=5
             )
             if like_button:
@@ -112,7 +125,9 @@ class XBrowser(BaseBrowser):
                     f"Index {line_index} out of bounds. Only {len(tokens)} tokens found."
                 )
             target_token = tokens[line_index]
-
+            log.debug(
+                f"Loaded auth token {target_token} from line {line_index} in {filepath}."
+            )
             return [
                 self._create_auth_cookie(target_token, ".x.com"),
                 self._create_auth_cookie(
@@ -137,6 +152,6 @@ class XBrowser(BaseBrowser):
             path="/",
             secure=True,
             http_only=True,
-            same_site=uc.cdp.network.CookieSameSite.LAX,  # Good practice for nav
+            # same_site=uc.cdp.network.CookieSameSite.LAX,  # Good practice for nav
             expires=None,
         )

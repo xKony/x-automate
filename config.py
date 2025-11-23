@@ -1,4 +1,4 @@
-HEADLESS_BROWSER = True
+HEADLESS_BROWSER = False
 X_URL = "https://x.com/"
 SAVE_LOGS = False
 PROMPT_FILE = "LLM/prompts/default_prompt.txt"

@@ -6,7 +6,7 @@ import os
 from typing import List, Tuple, Optional, Any
 from fake_useragent import UserAgent
 from config import HEADLESS_BROWSER
-from logger import get_logger
+from utils.logger import get_logger
 
 log = get_logger(__name__)
 
