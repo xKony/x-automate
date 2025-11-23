@@ -22,22 +22,28 @@ class XBrowser(BaseBrowser):
         await self.browser.connection.send(uc.cdp.storage.set_cookies(cookie_params))
         return self.browser
 
-    async def goto_target(self, url: str = X_URL):
+    async def goto_target(self, url: str = X_URL) -> uc.Tab:
         if self.browser is None:
             raise RuntimeError("Browser not initialized. Call create_browser() first.")
+        log.debug(f"Navigating to {url}")
         self.target = await self.browser.get(url)
         return self.target
 
     async def find_and_click(self, text: str):
         if isinstance(self.target, uc.Tab):
-            element = await self.target.find(text, best_match=True)
-            if element:
+            element: Optional[uc.Element] = await self.target.find(
+                text, best_match=True, timeout=5
+            )
+            if isinstance(element, uc.Element):
+                log.debug(f"Clicking element with text '{text}'.")
                 await element.click()
+            else:
+                log.warning(f"Element with text '{text}' not found.")
 
     async def collect_valid_tweets(self) -> List[Dict[str, Any]]:
+        log.debug("Collecting valid tweets...")
         if (self.target is None) or (self.browser is None):
             return []
-
         try:
             tweet_divs: List[uc.Element] = await self.page.select_all(
                 'div[data-testid="tweetText"]'
@@ -111,6 +117,22 @@ class XBrowser(BaseBrowser):
             )
             if like_button:
                 await like_button.click()
+
+    async def repost_tweet(self):
+        if isinstance(self.target, uc.Tab):
+            repost_button = await self.target.select(
+                'button[data-testid="retweet"]', timeout=5
+            )
+            if repost_button:
+                retweet_confirm = await self.target.select(
+                    'button[data-testid="retweetConfirm"]', timeout=5
+                )
+                if retweet_confirm:
+                    await retweet_confirm.click()
+
+    async def quote_tweet(self):
+        # to be implemented
+        pass
 
     def load_auth_token_from_txt(
         self, line_index: int = 0, filepath: str = AUTH_TOKENS_FILE
