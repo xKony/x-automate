@@ -51,19 +51,13 @@ class XBrowser(BaseBrowser):
         except Exception as e:
             log.error(f"Error loading tweets: {e}")
 
-    async def run_logic(self):
-        if not self.browser:
-            await self.create_browser()
+    async def like_tweet(self):
+        if isinstance(self.page, uc.Tab):
+            like_button = await self.page.select(
+                'button[data-testid="like"]', timeout=5
+            )
+            if like_button:
+                await like_button.click()
 
-        # Calls self.browser.get() automatically
-        await self.get("https://www.google.com")
-
-        # Wait for an element (nodriver syntax)
-        search_box = await self.select("textarea[name='q']")
-        await search_box.send_keys("Nodriver OOP example")
-
-        print("Script finished doing work.")
-
-
-def _get_alphanumeric_count(self, text: str) -> int:
-    return sum(map(str.isalnum, text))
+    def _get_alphanumeric_count(self, text: str) -> int:
+        return sum(map(str.isalnum, text))
