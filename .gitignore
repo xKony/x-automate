@@ -1,4 +1,5 @@
 /cookies/cookies.json
+/cookies/auth_tokens.txt
 .env
 .session.dat
 __pycache__
