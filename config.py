@@ -16,4 +16,4 @@ COOKIES_FILE = "cookies/cookies.json"
 AUTH_TOKENS_FILE = "cookies/auth_tokens.txt"  # keep it very secret
 LOG_LEVEL = "DEBUG"
 MIN_X_LENGTH = 20
-DEFAULT_MODEL = "gemini-2.0-flash-lite-001"
+DEFAULT_MODEL = "gemini-2.0-flash-lite-001" 

@@ -2,7 +2,7 @@ import random
 import nodriver as uc
 import asyncio
 import json
-from utils.nodriver_utils import BaseBrowser
+from utils.base_browser import BaseBrowser
 from utils.logger import get_logger
 from typing import Optional, List, Dict, Any
 from config import HEADLESS_BROWSER, X_URL, MIN_X_LENGTH, COOKIES_FILE, AUTH_TOKENS_FILE
@@ -21,6 +21,8 @@ class XBrowser(BaseBrowser):
         cookie_params = self.load_auth_token_from_txt(index)
         await self.browser.connection.send(uc.cdp.storage.set_cookies(cookie_params))
         return self.browser
+
+    # --- Navigating ---
 
     async def find_and_click(self, text: str):
         if isinstance(self.page, uc.Tab):

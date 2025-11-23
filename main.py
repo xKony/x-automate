@@ -1,6 +1,6 @@
 import asyncio
 from utils.logger import get_logger
-from x_handling.browser import XBrowser
+from x_handling.x_browser import XBrowser
 from config import HEADLESS_BROWSER
 
 log = get_logger(__name__)
