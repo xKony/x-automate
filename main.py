@@ -1,5 +1,6 @@
 import asyncio
 from utils.logger import get_logger
+from utils.nodriver_utils import BaseBrowser
 
 log = get_logger(__name__)
 

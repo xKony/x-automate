@@ -1,15 +1,21 @@
 import nodriver as uc
+import asyncio
 import random
-from typing import List, Tuple
+import shutil
+import os
+from typing import List, Tuple, Optional, Any
 from fake_useragent import UserAgent
 from config import HEADLESS_BROWSER
+from logger import get_logger
+
+log = get_logger(__name__)
 
 
-class Nodriver_Utils:
+class BaseBrowser:
     def __init__(self, headless: bool = HEADLESS_BROWSER):
         self.headless = headless
         self.ua_generator = UserAgent()
-
+        self.browser: Optional[uc.Browser] = None
         # Default resolutions list (Width, Height)
         self.resolutions: List[Tuple[int, int]] = [
             (1920, 1080),
@@ -24,6 +30,13 @@ class Nodriver_Utils:
         ]
 
         self.languages: List[str] = ["en-US", "en-GB", "fr-FR", "de-DE"]
+
+    def __getattr__(self, name: str) -> Any:
+        if self.browser and hasattr(self.browser, name):
+            return getattr(self.browser, name)
+        raise AttributeError(
+            f"'{type(self).__name__}' object has no attribute '{name}'"
+        )
 
     def _get_random_resolution(self) -> Tuple[int, int]:
         base_w, base_h = random.choice(self.resolutions)
@@ -45,13 +58,34 @@ class Nodriver_Utils:
             "--disable-extensions",
         ]
 
-    async def create_driver(self) -> uc.Browser:
+    async def create_browser(self) -> uc.Browser:
         w, h = self._get_random_resolution()
         user_agent = self.ua_generator.random
         lang = random.choice(self.languages)
-        browser_args = self._generate_browser_args(w, h, user_agent)
-        browser = await uc.start(
-            browser_args=browser_args, headless=self.headless, lang=lang
-        )
 
-        return browser
+        args = self._generate_browser_args(w, h, user_agent)
+
+        log.info("Starting Browser with randomized fingerprint...")
+        self.browser = await uc.start(
+            browser_args=args, headless=self.headless, lang=lang
+        )
+        return self.browser
+
+    async def stop(self):
+        if not self.browser:
+            return
+        try:
+            user_data_dir = self.browser.user_data_dir  # type: ignore
+            self.browser.stop()
+            await asyncio.sleep(1.5)
+            log.debug("Browser process stopped.")
+            if self.user_data_dir and os.path.exists(self.user_data_dir):
+                try:
+                    shutil.rmtree(self.user_data_dir, ignore_errors=True)
+                    log.debug(f"Cleaned up temp profile: {self.user_data_dir}")
+                except Exception as e:
+                    log.warning(f"Could not delete temp dir: {e}")
+        except Exception as e:
+            log.error(f"Error during browser shutdown: {e}")
+        finally:
+            self.browser = None
