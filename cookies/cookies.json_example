@@ -1,30 +1,13 @@
 {
-  "USERNAME1": [
-    {
-      "domain": ".x.com",
-      "hostOnly": false,
-      "httpOnly": false,
-      "name": "auth_token",
-      "path": "/",
-      "sameSite": null,
-      "secure": true,
-      "session": true,
-      "storeId": null,
-      "value": "0000000000000000000000000000000000"
+  "@USERNAME1": {
+    "handle": "@USERNAME1",
+    "auth_token": "00000000000000000000000000000000000",
+    "last_activity": "2025-10-24T18:10:49.654325Z",
+    "metrics": {
+      "reposts": 2,
+      "likes": 15,
+      "replies": 4,
+      "quotes": 18
     }
-  ],
-  "USERNAME2": [
-    {
-      "domain": ".x.com",
-      "hostOnly": false,
-      "httpOnly": false,
-      "name": "auth_token",
-      "path": "/",
-      "sameSite": null,
-      "secure": true,
-      "session": true,
-      "storeId": null,
-      "value": "0000000000000000000000000000000000"
-    }
-  ]
+  }
 }
