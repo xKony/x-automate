@@ -1,4 +1,3 @@
-import os
 import asyncio
 import random
 from typing import Optional

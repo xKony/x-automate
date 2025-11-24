@@ -2,6 +2,8 @@ import random
 import nodriver as uc
 import asyncio
 import json
+import os
+from datetime import datetime
 from utils.base_browser import BaseBrowser
 from utils.logger import get_logger
 from typing import Optional, List, Dict, Any
@@ -15,6 +17,7 @@ class XBrowser(BaseBrowser):
         super().__init__(headless=headless)
         self.page: Optional[uc.Tab] = None
         self.tweets_to_process: List[uc.Element] = []
+        self._last_auth_token: Optional[str] = None
 
     async def create_browser(self, index: int = 0) -> uc.Browser:
         self.browser = await super().create_browser()
@@ -41,6 +44,20 @@ class XBrowser(BaseBrowser):
         log.debug(f"Navigating to {url}")
         self.page = await self.browser.get(url)
         await self.find_and_click("Refuse non-essential cookies")  # cookies
+        # Try to capture the current account handle and persist metadata
+        try:
+            handle = await self.get_account_handle()
+            if handle:
+                # store in instance for later metric updates
+                self._last_handle = handle
+                # save account metadata (auth token may have been set earlier)
+                try:
+                    self.save_account_metadata(handle)
+                except Exception as e:
+                    log.warning(f"Failed saving account metadata: {e}")
+        except Exception:
+            # non-fatal
+            pass
         return self.page
 
     async def go_back(self):
@@ -115,6 +132,10 @@ class XBrowser(BaseBrowser):
                 if like_btn:
                     await like_btn.click()
                     log.info("Action: Liked tweet.")
+                    try:
+                        self.increment_metric("likes")
+                    except Exception:
+                        pass
                     return True
             except Exception as e:
                 log.warning(f"Failed to like: {e}")
@@ -135,6 +156,10 @@ class XBrowser(BaseBrowser):
                     if confirm_btn:
                         await confirm_btn.click()
                         log.info("Action: Reposted tweet.")
+                        try:
+                            self.increment_metric("reposts")
+                        except Exception:
+                            pass
                         return True
             except Exception as e:
                 log.warning(f"Failed to repost: {e}")
@@ -156,6 +181,10 @@ class XBrowser(BaseBrowser):
                     if post_btn:
                         await post_btn.click()
                         log.info("Action: Replied to tweet.")
+                        try:
+                            self.increment_metric("replies")
+                        except Exception:
+                            pass
                         return True
             except Exception as e:
                 log.warning(f"Failed to reply: {e}")
@@ -195,6 +224,10 @@ class XBrowser(BaseBrowser):
                             if post_btn:
                                 await post_btn.click()
                                 log.info("Action: Quoted tweet.")
+                                try:
+                                    self.increment_metric("quotes")
+                                except Exception:
+                                    pass
                                 return True
             except Exception as e:
                 log.warning(f"Failed to quote: {e}")
@@ -214,6 +247,8 @@ class XBrowser(BaseBrowser):
                     f"Index {line_index} out of bounds. Only {len(tokens)} tokens found."
                 )
             target_token = tokens[line_index]
+            # store last used token for later persistence
+            self._last_auth_token = target_token
             log.debug(
                 f"Loaded auth token {target_token} from line {line_index} in {filepath}."
             )
@@ -244,3 +279,120 @@ class XBrowser(BaseBrowser):
             # same_site=uc.cdp.network.CookieSameSite.LAX,  # Good practice for nav
             expires=None,
         )
+
+    async def get_account_handle(self) -> Optional[str]:
+        if not self.page:
+            return None
+        try:
+            el = await self.page.select(
+                'button[data-test-id="SideNav_AccountSwitcher_Button"]', timeout=3
+            )
+            if el:
+                handle = el.text_all.strip()
+                log.debug(f"Found account handle: {handle}")
+                return handle
+        except Exception as e:
+            log.debug(f"Could not read account handle: {e}")
+        return None
+
+    def save_account_metadata(self, handle: str):
+        """Save or update the cookies JSON file with basic account metadata and metrics.
+
+        Structure:
+        {
+          "handle": {
+             "handle": "@user",
+             "auth_token": "...",
+             "last_activity": "ISO timestamp",
+             "metrics": {
+                 "reposts": 0,
+                 "likes": 0,
+                 "replies": 0,
+                 "quotes": 0
+             }
+          }
+        }
+        """
+        path = COOKIES_FILE
+        # ensure directory exists
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+        except Exception:
+            pass
+
+        data = {}
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f) or {}
+            except Exception as e:
+                log.warning(f"Failed reading existing cookies file: {e}")
+
+        entry = data.get(handle, {}) if isinstance(data, dict) else {}
+        # preserve existing metrics if possible
+        metrics = entry.get("metrics", {}) if isinstance(entry, dict) else {}
+        metrics.setdefault("reposts", 0)
+        metrics.setdefault("likes", 0)
+        metrics.setdefault("replies", 0)
+        metrics.setdefault("quotes", 0)
+
+        entry.update(
+            {
+                "handle": handle,
+                "auth_token": self._last_auth_token,
+                "last_activity": datetime.utcnow().isoformat() + "Z",
+                "metrics": metrics,
+            }
+        )
+
+        if isinstance(data, dict):
+            data[handle] = entry
+        else:
+            data = {handle: entry}
+
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            log.info(f"Saved account metadata to {path} for handle {handle}")
+        except Exception as e:
+            log.error(f"Failed writing cookies file {path}: {e}")
+
+    def increment_metric(self, metric: str, amount: int = 1):
+        handle = getattr(self, "_last_handle", None)
+        if not handle:
+            log.debug("No handle available to increment metric")
+            return
+
+        path = COOKIES_FILE
+        if not os.path.exists(path):
+            log.debug("Cookies file not found when incrementing metric")
+            return
+
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f) or {}
+        except Exception as e:
+            log.warning(f"Failed reading cookies file for metric increment: {e}")
+            return
+
+        entry = data.get(handle)
+        if not entry:
+            log.debug("No entry for handle when incrementing metric")
+            return
+
+        metrics = entry.get("metrics") or {}
+        metrics.setdefault(metric, 0)
+        try:
+            metrics[metric] = int(metrics.get(metric, 0)) + int(amount)
+        except Exception:
+            metrics[metric] = 1
+
+        entry["metrics"] = metrics
+        data[handle] = entry
+
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            log.debug(f"Incremented metric '{metric}' for {handle}")
+        except Exception as e:
+            log.error(f"Failed writing cookies file for metric increment: {e}")

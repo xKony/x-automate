@@ -10,6 +10,10 @@ async def main():
     x_browser = XBrowser(headless=HEADLESS_BROWSER)
     await x_browser.create_browser(0)
     x_browser.page = await x_browser.goto_target()
+    await asyncio.sleep(5)
+    handle = await x_browser.get_account_handle()
+    if handle:
+        print(handle)
     await asyncio.sleep(100)
     pass
 

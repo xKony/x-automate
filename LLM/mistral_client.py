@@ -17,6 +17,7 @@ def load_prompt(prompt: str = PROMPT_FILE) -> str:
             log.error("Prompt file not found")
             raise Exception("Prompt file not found")
         return f.read().strip()
+    return ""
 
 
 class Mistral_Client:
@@ -25,17 +26,19 @@ class Mistral_Client:
         self.model = model
         self.prompt = load_prompt()
 
-    async def get_response(self):
+    async def get_response_raw(self):
         log.debug("Sending prompt to Mistral model...")
         response = await self.client.chat.complete_async(
             model=self.model, messages=[UserMessage(content=self.prompt)]
         )
         if response is None:
             log.error("No response from Mistral model")
+        return response
+
+    def parse_response(self, response):
+        if response is None:
             return None
-        # Try to extract a readable text string from the response object.
         try:
-            # Common place: response.choices[0].message.content
             content = None
             if hasattr(response, "choices"):
                 choices = getattr(response, "choices")
@@ -48,17 +51,14 @@ class Mistral_Client:
                     elif isinstance(first, dict):
                         content = first.get("message", {}).get("content")
 
-            # fallback attributes used by some clients
             if not content:
                 content = getattr(response, "output_text", None) or getattr(
                     response, "text", None
                 )
 
-            # final fallback to stringifying the response
             if content is None:
                 content = str(response)
 
-            # If content is a list/dict, stringify to readable text
             if isinstance(content, list):
                 content = "\n".join(map(str, content))
             if isinstance(content, dict):
@@ -68,3 +68,7 @@ class Mistral_Client:
         except Exception as e:
             log.error(f"Failed parsing Mistral response: {e}")
             return str(response)
+
+    async def get_response(self):
+        raw = await self.get_response_raw()
+        return self.parse_response(raw)
