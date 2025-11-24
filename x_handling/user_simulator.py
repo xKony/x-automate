@@ -18,9 +18,9 @@ class UserSimulator:
     def __init__(
         self, browser: XBrowser, llm_client: Mistral_Client, max_actions: int = 20
     ):
-        self.browser = browser
-        self.llm = llm_client
-        self.max_actions = max_actions
+        self.browser: XBrowser = browser
+        self.llm: Mistral_Client = llm_client
+        self.max_actions: int = max_actions
 
     async def simulate_feed(
         self, token_line_index: int = 0, max_tweets: Optional[int] = None
@@ -29,12 +29,29 @@ class UserSimulator:
             await self.browser.create_browser(index=token_line_index)
             await self.browser.goto_target()
 
+            # small randomized feed scrolling to simulate human behavior
+            try:
+                if self.browser.page:
+                    scroll_rounds = random.randint(1, 4)
+                    for _ in range(scroll_rounds):
+                        amount = random.randint(200, 900)
+                        try:
+                            await self.browser.page.evaluate(
+                                f"window.scrollBy(0, {amount})"
+                            )
+                        except Exception:
+                            # best-effort; non-fatal if evaluate not supported
+                            pass
+                        await asyncio.sleep(random.uniform(0.7, 1.8))
+            except Exception:
+                pass
+
             tweet_divs = await self.browser.collect_feed_tweets()
             if not tweet_divs:
                 log.info("No tweets found in feed to simulate.")
                 return
 
-            actions_done = 0
+            actions_done: int = 0
             for i, div in enumerate(tweet_divs, start=1):
                 if max_tweets and i > max_tweets:
                     break
@@ -43,7 +60,7 @@ class UserSimulator:
                 await self.browser.process_single_tweet(div, i)
 
                 # pick one action per tweet according to probabilities
-                r = random.random()
+                r: float = random.random()
                 performed = False
 
                 if r < PROB_LIKE:
@@ -68,8 +85,14 @@ class UserSimulator:
                         performed = True
                         log.debug(f"Tweet {i}: Quoted (r={r:.3f}).")
 
-                # small human-like pause
-                await asyncio.sleep(random.uniform(0.5, 2.0))
+                # small human-like pause after interacting with tweet detail
+                await asyncio.sleep(random.uniform(1.5, 4.0))
+
+                # cooldown after any performed action (reasonable human delay)
+                if performed:
+                    cooldown = random.randint(5, 30)
+                    log.debug(f"Cooldown after action: {cooldown}s")
+                    await asyncio.sleep(cooldown)
 
                 # go back to feed
                 await self.browser.go_back()

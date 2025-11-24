@@ -16,6 +16,7 @@ class BaseBrowser:
         self.headless = headless
         self.ua_generator = UserAgent()
         self.browser: Optional[uc.Browser] = None
+        self.user_data_dir = None
         # Default resolutions list (Width, Height)
         self.resolutions: List[Tuple[int, int]] = [
             (1920, 1080),
@@ -72,20 +73,19 @@ class BaseBrowser:
         return self.browser
 
     async def stop(self):
-        if not self.browser:
-            return
-        try:
-            user_data_dir = self.browser.user_data_dir  # type: ignore
-            self.browser.stop()
-            await asyncio.sleep(1.5)
-            log.debug("Browser process stopped.")
-            if self.user_data_dir and os.path.exists(self.user_data_dir):
-                try:
-                    shutil.rmtree(self.user_data_dir, ignore_errors=True)
-                    log.debug(f"Cleaned up temp profile: {self.user_data_dir}")
-                except Exception as e:
-                    log.warning(f"Could not delete temp dir: {e}")
-        except Exception as e:
-            log.error(f"Error during browser shutdown: {e}")
-        finally:
-            self.browser = None
+        if self.browser:
+            try:
+                self.user_data_dir = self.browser.config.user_data_dir
+                self.browser.stop()
+                await asyncio.sleep(1.5)
+                log.debug("Browser process stopped.")
+                if self.user_data_dir and os.path.exists(self.user_data_dir):
+                    try:
+                        shutil.rmtree(self.user_data_dir, ignore_errors=True)
+                        log.debug(f"Cleaned up temp profile: {self.user_data_dir}")
+                    except Exception as e:
+                        log.warning(f"Could not delete temp dir: {e}")
+            except Exception as e:
+                log.error(f"Error during browser shutdown: {e}")
+            finally:
+                self.browser = None
