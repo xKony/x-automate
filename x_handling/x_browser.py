@@ -3,6 +3,7 @@ import nodriver as uc
 import asyncio
 import json
 import os
+import re
 from datetime import datetime
 from utils.base_browser import BaseBrowser
 from utils.logger import get_logger
@@ -50,7 +51,6 @@ class XBrowser(BaseBrowser):
             if handle:
                 # store in instance for later metric updates
                 self._last_handle = handle
-                # save account metadata (auth token may have been set earlier)
                 try:
                     self.save_account_metadata(handle)
                 except Exception as e:
@@ -285,12 +285,19 @@ class XBrowser(BaseBrowser):
             return None
         try:
             el = await self.page.select(
-                'button[data-test-id="SideNav_AccountSwitcher_Button"]', timeout=3
+                'button[data-testid="SideNav_AccountSwitcher_Button"]', timeout=3
             )
             if el:
-                handle = el.text_all.strip()
-                log.debug(f"Found account handle: {handle}")
-                return handle
+                full_text = el.text_all
+                match = re.search(r"(@[a-zA-Z0-9_]+)", full_text)
+
+                if match:
+                    handle = match.group(1)
+                    log.debug(f"Found account handle: {handle}")
+                    return handle
+
+                log.debug(f"Handle pattern not found in text: {full_text}")
+
         except Exception as e:
             log.debug(f"Could not read account handle: {e}")
         return None
