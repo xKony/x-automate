@@ -1,9 +1,9 @@
 # x_handling
 PROB_LIKE = 0.40  # 40% chance to like
 PROB_REPOST = 0.10  # 10% chance to repost
-PROB_REPLY = 0.95  # 15% chance to reply
+PROB_REPLY = 0.15  # 15% chance to reply
 PROB_QUOTE = 0.05  # 5% chance to quote
-
+PROB_PAGE_REFRESH = 0.15  # 15% chance to refresh the page to get new tweets
 
 HEADLESS_BROWSER = False
 X_URL = "https://x.com/"

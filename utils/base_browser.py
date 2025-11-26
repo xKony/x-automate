@@ -20,14 +20,14 @@ class BaseBrowser:
         # Default resolutions list (Width, Height)
         self.resolutions: List[Tuple[int, int]] = [
             (1920, 1080),
-            (1366, 768),
-            (1536, 864),
-            (1440, 900),
-            (1600, 900),
-            (1280, 720),
-            (800, 600),
-            (2560, 1440),
-            (3840, 2160),
+            # (1366, 768),
+            # (1536, 864),
+            # (1440, 900),
+            # (1600, 900),
+            # (1280, 720),
+            # (800, 600),
+            # (2560, 1440),
+            # (3840, 2160),
         ]
 
         self.languages: List[str] = ["en-US", "en-GB", "fr-FR", "de-DE"]
@@ -52,10 +52,10 @@ class BaseBrowser:
             f"--window-size={width},{height}",
             f"--user-agent={user_agent}",
             random.choice(["--disable-gpu", "--enable-gpu"]),
-            f"--force-device-scale-factor={random.uniform(1.0, 1.5):.2f}",
+            f"--force-device-scale-factor={random.uniform(1.0, 1.25):.2f}",
             f"--renderer-process-limit={random.randint(5, 20)}",
-            f"--screen-width={random.randint(1200, 2560)}",
-            f"--screen-height={random.randint(800, 1440)}",
+            f"--screen-width={random.randint(1200, 1920)}",
+            f"--screen-height={random.randint(800, 1080)}",
             "--disable-extensions",
         ]
 

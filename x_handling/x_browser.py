@@ -172,6 +172,7 @@ class XBrowser(BaseBrowser):
                     'div[data-testid="tweetTextarea_0"]', timeout=3
                 )
                 if input_area:
+                    await input_area.scroll_into_view()
                     await input_area.click()
                     await input_area.send_keys(text)
                     await asyncio.sleep(1)
