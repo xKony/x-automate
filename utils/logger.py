@@ -2,7 +2,7 @@ import logging
 import os
 import sys
 from datetime import datetime
-from config import SAVE_LOGS, LOG_LEVEL  # Import the new level variable
+from config import SAVE_LOGS, LOG_LEVEL
 
 
 class CustomFormatter(logging.Formatter):

@@ -1,5 +1,4 @@
 import asyncio
-import os
 from utils.logger import get_logger
 from x_handling.x_browser import XBrowser
 from x_handling.user_simulator import UserSimulator

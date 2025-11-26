@@ -7,7 +7,7 @@ import re
 from datetime import datetime
 from utils.base_browser import BaseBrowser
 from utils.logger import get_logger
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 from config import HEADLESS_BROWSER, X_URL, MIN_X_LENGTH, COOKIES_FILE, AUTH_TOKENS_FILE
 
 log = get_logger(__name__)
@@ -410,5 +410,5 @@ class XBrowser(BaseBrowser):
             log.error(f"Failed writing cookies file for metric increment: {e}")
 
     # --- Helper functions ---
-    def get_tweet_text(self, tweet_id: uc.Element) -> str:
+    async def get_tweet_text(self, tweet_id: uc.Element) -> str:
         return str(tweet_id.text_all).strip().replace("\n", " ")

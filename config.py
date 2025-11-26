@@ -12,6 +12,6 @@ PROMPT_FILE = "LLM/prompts/default_prompt.txt"
 COOKIES_FILE = "cookies/cookies.json"
 AUTH_TOKENS_FILE = "cookies/auth_tokens.txt"  # keep it very secret
 LOG_LEVEL = "DEBUG"
-MIN_X_LENGTH = 20
+MIN_X_LENGTH = 20  # min length in characters for X post to be processed (its hard to reply to a 10 character post)
 DEFAULT_MODEL = "mistral-small-latest"
 MAX_ACTIONS = 20  # default max activities per account
