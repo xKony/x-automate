@@ -29,7 +29,7 @@ Browser Automation: Uses `nodriver` (undetected-chromedriver) to bypass bot dete
     ├── .env                # Secrets and API keys
     ├── LLM/
     │   └── mistral_client.py   # Wrapper for Mistral AI interactions
-    │   └── default_prompt      # Prompt for API call
+    │   └── prompts/default_prompt      # Prompt for API call
     ├── x_handling/
     │   ├── x_browser.py        # X-specific browser logic (inherits BaseBrowser)
     │   └── user_simulator.py   # Logic for user behavior simulation
@@ -50,8 +50,8 @@ Browser Automation: Uses `nodriver` (undetected-chromedriver) to bypass bot dete
 ## 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/your-repo-name.git
-cd your-repo-name
+git clone https://github.com/xKony/x-automate.git
+cd x-automate
 ```
 
 ## 2. Install Dependencies
@@ -65,6 +65,8 @@ pip install -r requirements.txt
 ```Ini
 MISTRAL_API_KEY=your_actual_api_key_here
 ```
+
+[Get your own API key here (need Mistral account)](https://console.mistral.ai/home?workspace_dialog=apiKeys)
 
 ## 4. Configuration
 
