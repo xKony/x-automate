@@ -8,7 +8,6 @@ from config import (
     HEADLESS_BROWSER,
     AUTH_TOKENS_FILE,
     MAX_ACTIONS,
-    DEFAULT_MODEL,
 )
 
 log = get_logger(__name__)
@@ -30,13 +29,7 @@ async def main():
         log.error("No auth tokens found; nothing to do.")
         return
 
-    # Require Mistral API key for replies/quotes
-    api_key = os.getenv("MISTRAL_API_KEY")
-    if not api_key:
-        log.error("Environment variable MISTRAL_API_KEY not set. Aborting run.")
-        return
-
-    llm_client = Mistral_Client(api_key=api_key, model=DEFAULT_MODEL)
+    llm_client = Mistral_Client()
 
     log.info(f"Starting simulation loop for {total} account(s)")
 

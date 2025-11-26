@@ -168,14 +168,14 @@ class XBrowser(BaseBrowser):
     async def comment_current_tweet(self, text: str):
         if isinstance(self.page, uc.Tab):
             try:
-                input_area = await self.page.select(
+                input_area: uc.Element = await self.page.select(
                     'div[data-testid="tweetTextarea_0"]', timeout=3
                 )
                 if input_area:
                     await input_area.click()
-                    await self.page.send_keys(text)
+                    await input_area.send_keys(text)
                     await asyncio.sleep(1)
-                    post_btn = await self.page.select(
+                    post_btn: uc.Element = await self.page.select(
                         'button[data-testid="tweetButtonInline"]', timeout=3
                     )
                     if post_btn:
@@ -209,12 +209,12 @@ class XBrowser(BaseBrowser):
 
                         # 3. Type text
                         # Focus input area
-                        input_area = await self.page.select(
+                        input_area: uc.Element = await self.page.select(
                             'div[data-testid="tweetTextarea_0"]', timeout=3
                         )
                         if input_area:
                             await input_area.click()
-                            await self.page.send_keys(text)
+                            await input_area(text)
                             await asyncio.sleep(1)
 
                             # 4. Click Post
@@ -249,8 +249,13 @@ class XBrowser(BaseBrowser):
             target_token = tokens[line_index]
             # store last used token for later persistence
             self._last_auth_token = target_token
+            masked_token = (
+                f"{target_token[:4]}...{target_token[-4:]}"
+                if target_token and len(target_token) > 8
+                else "INVALID"
+            )
             log.debug(
-                f"Loaded auth token {target_token} from line {line_index} in {filepath}."
+                f"Loaded auth token {masked_token} from line {line_index} in {filepath}."
             )
             return [
                 self._create_auth_cookie(target_token, ".x.com"),
@@ -403,3 +408,7 @@ class XBrowser(BaseBrowser):
             log.debug(f"Incremented metric '{metric}' for {handle}")
         except Exception as e:
             log.error(f"Failed writing cookies file for metric increment: {e}")
+
+    # --- Helper functions ---
+    def get_tweet_text(self, tweet_id: uc.Element) -> str:
+        return str(tweet_id.text_all).strip().replace("\n", " ")

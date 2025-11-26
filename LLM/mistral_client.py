@@ -1,10 +1,11 @@
+import json
+import os
 from dotenv import load_dotenv
 from mistralai import Mistral
 from mistralai.models import UserMessage
-from config import PROMPT_FILE
+from config import PROMPT_FILE, DEFAULT_MODEL
 from utils.logger import get_logger
-import json
-import os
+from typing import Optional
 
 load_dotenv()
 log = get_logger(__name__)
@@ -33,8 +34,12 @@ def load_prompt(prompt_path: str = PROMPT_FILE) -> str:
 
 
 class Mistral_Client:
-    def __init__(self, api_key: str, model: str):
+    def __init__(self, model: str = DEFAULT_MODEL):
         # Mask API key in logs for security
+        api_key: Optional[str] = os.getenv("MISTRAL_API_KEY")
+        if not api_key:
+            log.error("Environment variable MISTRAL_API_KEY not set.")
+            return
         masked_key = (
             f"{api_key[:4]}...{api_key[-4:]}"
             if api_key and len(api_key) > 8
@@ -45,7 +50,7 @@ class Mistral_Client:
         self.client = Mistral(api_key=api_key)
         self.model = model
         try:
-            self.prompt = load_prompt()
+            self.base_prompt = load_prompt()
         except Exception as e:
             log.critical(
                 "Failed to initialize Mistral Client due to prompt loading error."
@@ -54,11 +59,11 @@ class Mistral_Client:
 
         log.info("Mistral Client initialized successfully.")
 
-    async def get_response_raw(self):
+    async def get_response_raw(self, final_prompt: str):
         log.info(f"Sending prompt to Mistral model ({self.model})...")
         try:
             response = await self.client.chat.complete_async(
-                model=self.model, messages=[UserMessage(content=self.prompt)]
+                model=self.model, messages=[UserMessage(content=final_prompt)]
             )
             if response is None:
                 log.error("Received None response from Mistral API.")
@@ -85,41 +90,19 @@ class Mistral_Client:
                     first = choices[0]
                     if hasattr(first, "message") and hasattr(first.message, "content"):
                         content = first.message.content
-                        log.debug(
-                            "Extracted content from response.choices[0].message.content"
-                        )
                     elif isinstance(first, dict):
                         content = first.get("message", {}).get("content")
-                        log.debug("Extracted content from response.choices[0] dict")
 
             # 2. Fallback to output_text or text
             if not content:
                 if hasattr(response, "output_text"):
                     content = getattr(response, "output_text")
-                    log.debug("Extracted content from response.output_text")
                 elif hasattr(response, "text"):
                     content = getattr(response, "text")
-                    log.debug("Extracted content from response.text")
 
             # 3. Last resort: String conversion
             if content is None:
-                log.warning(
-                    "Could not extract standard content, falling back to str(response)"
-                )
                 content = str(response)
-
-            # 4. Formatting
-            if isinstance(content, list):
-                content = "\n".join(map(str, content))
-                log.debug("Joined list content into string")
-            if isinstance(content, dict):
-                content = json.dumps(content)
-                log.debug("Dumped dict content into JSON string")
-
-            if content:
-                log.debug(f"Parsed response: {content}")
-            else:
-                log.warning("Parsed content is empty.")
 
             return content
 
@@ -127,14 +110,57 @@ class Mistral_Client:
             log.error(f"Failed parsing Mistral response: {e}", exc_info=True)
             return str(response)
 
-    async def get_response(self):
+    def _extract_reply_from_json(self, raw_text: str) -> Optional[str]:
+        try:
+            # Clean up markdown code blocks if present (common LLM behavior)
+            clean_text = raw_text.replace("```json", "").replace("```", "").strip()
+
+            data = json.loads(clean_text)
+
+            # The prompt returns a list of objects
+            if isinstance(data, list) and len(data) > 0:
+                return data[0].get("reply")
+            elif isinstance(data, dict):
+                return data.get("reply")
+
+            log.warning(f"JSON parsed but structure unexpected: {data}")
+            return clean_text  # Fallback to full text if structure is wrong
+
+        except json.JSONDecodeError:
+            log.warning("LLM response was not valid JSON. Returning raw text.")
+            return raw_text
+        except Exception as e:
+            log.error(f"Error parsing JSON reply: {e}")
+            return raw_text
+
+    async def get_response(self, tweet_text: str):
         log.info("Starting response generation sequence...")
-        raw = await self.get_response_raw()
+
+        tweet_input: str = json.dumps({"id": 1, "text": tweet_text}, ensure_ascii=False)
+
+        # 2. Inject into the prompt template
+        if "[TWEET_IN_JSON]" in self.base_prompt:
+            final_prompt = self.base_prompt.replace("[TWEET_IN_JSON]", tweet_input)
+        else:
+            log.warning(
+                "Placeholder [TWEET_IN_JSON] not found in prompt file. Appending text."
+            )
+            final_prompt = f"{self.base_prompt}\n\nTweet Input:\n{tweet_input}"
+
+        # 3. Call API
+        raw = await self.get_response_raw(final_prompt)
 
         if raw:
-            result = self.parse_response(raw)
-            log.info("Response generation sequence completed.")
-            return result
+            # 4. Extract raw content string
+            content_str = self.parse_response(raw)
+            if not content_str:
+                return None
+
+            # 5. Parse the specific JSON format to get the clean reply
+            final_reply = self._extract_reply_from_json(content_str)
+
+            log.info(f"Generated Reply: {final_reply}")
+            return final_reply
         else:
             log.error("Response generation failed (No raw response).")
             return None
