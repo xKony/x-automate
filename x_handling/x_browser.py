@@ -7,18 +7,19 @@ import re
 from datetime import datetime
 from utils.base_browser import BaseBrowser
 from utils.logger import get_logger
-from typing import Optional, List
+from typing import Optional, List, Dict, Union
 from config import HEADLESS_BROWSER, X_URL, MIN_X_LENGTH, COOKIES_FILE, AUTH_TOKENS_FILE
 
 log = get_logger(__name__)
 
 
 class XBrowser(BaseBrowser):
-    def __init__(self, headless: bool = HEADLESS_BROWSER):
+    def __init__(self, headless: bool = HEADLESS_BROWSER) -> None:
         super().__init__(headless=headless)
         self.page: Optional[uc.Tab] = None
         self.tweets_to_process: List[uc.Element] = []
         self._last_auth_token: Optional[str] = None
+        self._last_handle: Optional[str] = None
 
     async def create_browser(self, index: int = 0) -> uc.Browser:
         self.browser = await super().create_browser()
@@ -28,7 +29,7 @@ class XBrowser(BaseBrowser):
 
     # --- Navigating ---
 
-    async def find_and_click(self, text: str):
+    async def find_and_click(self, text: str) -> None:
         if isinstance(self.page, uc.Tab):
             element: Optional[uc.Element] = await self.page.find(
                 text, best_match=True, timeout=5
@@ -60,7 +61,7 @@ class XBrowser(BaseBrowser):
             pass
         return self.page
 
-    async def go_back(self):
+    async def go_back(self) -> None:
         if isinstance(self.page, uc.Tab):
             await self.page.back()
             await asyncio.sleep(1)
@@ -81,7 +82,7 @@ class XBrowser(BaseBrowser):
             log.error(f"Error collecting tweets: {e}")
             return []
 
-    async def click_element_containing_text(self, element: uc.Element):
+    async def click_element_containing_text(self, element: uc.Element) -> None:
         try:
             target = element.parent if element.parent else element
             await target.scroll_into_view()
@@ -90,12 +91,12 @@ class XBrowser(BaseBrowser):
         except Exception as e:
             log.error(f"Could not click tweet: {e}")
 
-    async def process_single_tweet(self, div: uc.Element, index: int):
+    async def process_single_tweet(self, div: uc.Element, index: int) -> None:
         text: str = div.text_all.strip()
         current_tweet = div.parent if div.parent else div
         log.debug(f"\nTweet {index}: {text} \n")
         if self._get_alphanumeric_count(text) < MIN_X_LENGTH:
-            print(f"Tweet {index} skipped (too short)")
+            log.info(f"Tweet {index} skipped (too short)")
             return
         try:
             await current_tweet.scroll_into_view()
@@ -105,7 +106,7 @@ class XBrowser(BaseBrowser):
         except Exception as e:
             log.error(f"Failed to interact with tweet {index}: {e}")
 
-    async def load_tweets(self):
+    async def load_tweets(self) -> None:
         if (self.page is None) or (self.browser is None):
             return
         try:
@@ -123,7 +124,7 @@ class XBrowser(BaseBrowser):
             log.error(f"Error loading tweets: {e}")
 
     # --- Interaction Methods (intended for Tweet Detail View) ---
-    async def like_current_tweet(self):
+    async def like_current_tweet(self) -> bool:
         if isinstance(self.page, uc.Tab):
             try:
                 like_btn = await self.page.select(
@@ -134,14 +135,15 @@ class XBrowser(BaseBrowser):
                     log.info("Action: Liked tweet.")
                     try:
                         self.increment_metric("likes")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                         log.warning(f"Failed to increment like metric: {e}")
                     return True
             except Exception as e:
                 log.warning(f"Failed to like: {e}")
             return False
+        return False
 
-    async def repost_tweet(self):
+    async def repost_tweet(self) -> bool:
         if isinstance(self.page, uc.Tab):
             try:
                 retweet_menu_btn = await self.page.select(
@@ -158,14 +160,15 @@ class XBrowser(BaseBrowser):
                         log.info("Action: Reposted tweet.")
                         try:
                             self.increment_metric("reposts")
-                        except Exception:
-                            pass
+                        except Exception as e:
+                             log.warning(f"Failed to increment repost metric: {e}")
                         return True
             except Exception as e:
                 log.warning(f"Failed to repost: {e}")
             return False
+        return False
 
-    async def comment_current_tweet(self, text: str):
+    async def comment_current_tweet(self, text: str) -> bool:
         if isinstance(self.page, uc.Tab):
             try:
                 input_area: uc.Element = await self.page.select(
@@ -184,13 +187,14 @@ class XBrowser(BaseBrowser):
                         log.info("Action: Replied to tweet.")
                         try:
                             self.increment_metric("replies")
-                        except Exception:
-                            pass
+                        except Exception as e:
+                             log.warning(f"Failed to increment reply metric: {e}")
                         return True
             except Exception as e:
                 log.warning(f"Failed to reply: {e}")
+        return False
 
-    async def quote_current_tweet(self, text: str):
+    async def quote_current_tweet(self, text: str) -> bool:
         if isinstance(self.page, uc.Tab):
             try:
                 # 1. Click the Retweet Loop Icon
@@ -215,7 +219,7 @@ class XBrowser(BaseBrowser):
                         )
                         if input_area:
                             await input_area.click()
-                            await input_area(text)
+                            await input_area.send_keys(text)
                             await asyncio.sleep(1)
 
                             # 4. Click Post
@@ -227,12 +231,13 @@ class XBrowser(BaseBrowser):
                                 log.info("Action: Quoted tweet.")
                                 try:
                                     self.increment_metric("quotes")
-                                except Exception:
-                                    pass
+                                except Exception as e:
+                                     log.warning(f"Failed to increment quote metric: {e}")
                                 return True
             except Exception as e:
                 log.warning(f"Failed to quote: {e}")
             return False
+        return False
 
     # --- Auth token cookies ---
     def load_auth_token_from_txt(
@@ -268,6 +273,9 @@ class XBrowser(BaseBrowser):
         except FileNotFoundError:
             log.error(f"Auth token file not found: {filepath}")
             raise
+        except Exception as e:
+             log.error(f"Error loading auth token: {e}")
+             raise
 
     def _get_alphanumeric_count(self, text: str) -> int:
         return sum(map(str.isalnum, text))
@@ -308,24 +316,8 @@ class XBrowser(BaseBrowser):
             log.debug(f"Could not read account handle: {e}")
         return None
 
-    def save_account_metadata(self, handle: str):
-        """Save or update the cookies JSON file with basic account metadata and metrics.
-
-        Structure:
-        {
-          "handle": {
-             "handle": "@user",
-             "auth_token": "...",
-             "last_activity": "ISO timestamp",
-             "metrics": {
-                 "reposts": 0,
-                 "likes": 0,
-                 "replies": 0,
-                 "quotes": 0
-             }
-          }
-        }
-        """
+    def save_account_metadata(self, handle: str) -> None:
+        """Save or update the cookies JSON file with basic account metadata and metrics."""
         path = COOKIES_FILE
         # ensure directory exists
         try:
@@ -333,7 +325,7 @@ class XBrowser(BaseBrowser):
         except Exception:
             pass
 
-        data = {}
+        data: Dict[str, Any] = {}
         if os.path.exists(path):
             try:
                 with open(path, "r", encoding="utf-8") as f:
@@ -370,7 +362,7 @@ class XBrowser(BaseBrowser):
         except Exception as e:
             log.error(f"Failed writing cookies file {path}: {e}")
 
-    def increment_metric(self, metric: str, amount: int = 1):
+    def increment_metric(self, metric: str, amount: int = 1) -> None:
         handle = getattr(self, "_last_handle", None)
         if not handle:
             log.debug("No handle available to increment metric")

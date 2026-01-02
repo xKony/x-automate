@@ -12,11 +12,11 @@ log = get_logger(__name__)
 
 
 class BaseBrowser:
-    def __init__(self, headless: bool = HEADLESS_BROWSER):
-        self.headless = headless
+    def __init__(self, headless: bool = HEADLESS_BROWSER) -> None:
+        self.headless: bool = headless
         self.ua_generator = UserAgent()
         self.browser: Optional[uc.Browser] = None
-        self.user_data_dir = None
+        self.user_data_dir: Optional[str] = None
         # Default resolutions list (Width, Height)
         self.resolutions: List[Tuple[int, int]] = [
             (1920, 1080),
@@ -72,7 +72,7 @@ class BaseBrowser:
         )
         return self.browser
 
-    async def stop(self):
+    async def stop(self) -> None:
         if self.browser:
             try:
                 self.user_data_dir = self.browser.config.user_data_dir

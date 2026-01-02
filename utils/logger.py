@@ -3,6 +3,7 @@ import os
 import sys
 from datetime import datetime
 from config import SAVE_LOGS, LOG_LEVEL
+from typing import Optional
 
 
 class CustomFormatter(logging.Formatter):
@@ -23,13 +24,13 @@ class CustomFormatter(logging.Formatter):
         logging.CRITICAL: bold_red + format_str + reset,
     }
 
-    def format(self, record):
+    def format(self, record: logging.LogRecord) -> str:
         log_fmt = self.FORMATS.get(record.levelno)
         formatter = logging.Formatter(log_fmt, datefmt="%Y-%m-%d %H:%M:%S")
         return formatter.format(record)
 
 
-def get_logger(module_name):
+def get_logger(module_name: str) -> logging.Logger:
 
     # 1. Convert config string to logging level
     # If config is invalid, defaults to logging.INFO

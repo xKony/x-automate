@@ -5,7 +5,7 @@ from mistralai import Mistral
 from mistralai.models import UserMessage
 from config import PROMPT_FILE, DEFAULT_MODEL
 from utils.logger import get_logger
-from typing import Optional
+from typing import Optional, Any
 
 load_dotenv()
 log = get_logger(__name__)
@@ -33,8 +33,8 @@ def load_prompt(prompt_path: str = PROMPT_FILE) -> str:
         raise e
 
 
-class Mistral_Client:
-    def __init__(self, model: str = DEFAULT_MODEL):
+class MistralClient:
+    def __init__(self, model: str = DEFAULT_MODEL) -> None:
         # Mask API key in logs for security
         api_key: Optional[str] = os.getenv("MISTRAL_API_KEY")
         if not api_key:
@@ -48,9 +48,9 @@ class Mistral_Client:
         log.debug(f"Initializing Mistral Client. Model: {model}, Key: {masked_key}")
 
         self.client = Mistral(api_key=api_key)
-        self.model = model
+        self.model: str = model
         try:
-            self.base_prompt = load_prompt()
+            self.base_prompt: str = load_prompt()
         except Exception as e:
             log.critical(
                 "Failed to initialize Mistral Client due to prompt loading error."
@@ -59,7 +59,7 @@ class Mistral_Client:
 
         log.info("Mistral Client initialized successfully.")
 
-    async def get_response_raw(self, final_prompt: str):
+    async def get_response_raw(self, final_prompt: str) -> Optional[Any]:
         log.info(f"Sending prompt to Mistral model ({self.model})...")
         try:
             response = await self.client.chat.complete_async(
@@ -74,7 +74,7 @@ class Mistral_Client:
             log.error(f"Exception during Mistral API call: {e}")
             return None
 
-    def parse_response(self, response):
+    def parse_response(self, response: Any) -> Optional[str]:
         if response is None:
             log.warning("Cannot parse None response.")
             return None
@@ -133,7 +133,7 @@ class Mistral_Client:
             log.error(f"Error parsing JSON reply: {e}")
             return raw_text
 
-    async def get_response(self, tweet_text: str):
+    async def get_response(self, tweet_text: str) -> Optional[str]:
         log.info("Starting response generation sequence...")
 
         tweet_input: str = json.dumps({"id": 1, "text": tweet_text}, ensure_ascii=False)

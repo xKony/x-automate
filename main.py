@@ -2,7 +2,7 @@ import asyncio
 from utils.logger import get_logger
 from x_handling.x_browser import XBrowser
 from x_handling.user_simulator import UserSimulator
-from LLM.mistral_client import Mistral_Client
+from LLM.mistral_client import MistralClient
 from config import (
     HEADLESS_BROWSER,
     AUTH_TOKENS_FILE,
@@ -22,13 +22,13 @@ def _count_tokens(filepath: str) -> int:
         return 0
 
 
-async def main():
+async def main() -> None:
     total = _count_tokens(AUTH_TOKENS_FILE)
     if total == 0:
         log.error("No auth tokens found; nothing to do.")
         return
 
-    llm_client = Mistral_Client()
+    llm_client = MistralClient()
 
     log.info(f"Starting simulation loop for {total} account(s)")
 
