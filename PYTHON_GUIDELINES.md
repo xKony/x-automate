@@ -210,7 +210,3 @@ class PaymentProcessor:
     def charge(self, amount: float): ...
 
 ```
-
-```
-
-```

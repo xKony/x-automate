@@ -5,7 +5,7 @@ PROB_REPLY = 0.15  # 15% chance to reply
 PROB_QUOTE = 0.05  # 5% chance to quote
 PROB_PAGE_REFRESH = 0.15  # 15% chance to refresh the page to get new tweets
 
-HEADLESS_BROWSER = True
+HEADLESS_BROWSER = False
 X_URL = "https://x.com/"
 SAVE_LOGS = False
 PROMPT_FILE = "LLM/prompts/default_prompt.txt"
@@ -15,3 +15,7 @@ LOG_LEVEL = "DEBUG"
 MIN_X_LENGTH = 20  # min length in characters for X post to be processed (its hard to reply to a 10 character post)
 DEFAULT_MODEL = "mistral-small-latest"
 MAX_ACTIONS = 20  # default max activities per account
+
+# VPN Configuration
+DEFAULT_VPN_LOCATION = "United States"
+VPN_FALLBACK_LIST = ["Germany", "United Kingdom", "Canada"]

@@ -20,14 +20,11 @@ class BaseBrowser:
         # Default resolutions list (Width, Height)
         self.resolutions: List[Tuple[int, int]] = [
             (1920, 1080),
-            # (1366, 768),
-            # (1536, 864),
-            # (1440, 900),
-            # (1600, 900),
-            # (1280, 720),
-            # (800, 600),
-            # (2560, 1440),
-            # (3840, 2160),
+            (1366, 768),
+            (1536, 864),
+            (1440, 900),
+            (1600, 900),
+            (1280, 720),
         ]
 
         self.languages: List[str] = ["en-US", "en-GB", "fr-FR", "de-DE"]

@@ -8,3 +8,4 @@ logs
 .vscode
 test.py
 .prettierrc
+nordvpn_settings.json

@@ -61,6 +61,68 @@ class XBrowser(BaseBrowser):
             pass
         return self.page
 
+    async def get_current_page_state(self) -> str:
+        """
+        Determines the current state of the browser page.
+        Returns: 'FEED', 'DETAIL', or 'UNKNOWN'
+        """
+        if not self.page:
+            return "UNKNOWN"
+        
+        try:
+            # Check URL first (fastest)
+            # nodriver might not always update 'msg' or 'url' property instantly, but it often does.
+            # We can also check for specific elements.
+            
+            # Heuristic 1: URL inspection if possible (implementation specific to nodriver version)
+            # For now, let's rely on element presence which is more robust for checking "view" state.
+            
+            # Check for Tweet Detail specific element (e.g. the main inline reply box)
+            # 'div[data-testid="tweetTextarea_0"]' usually exists on detail pages (and sometimes home if composed?)
+            # But the "Back" button "header" is a good indicator for Detail view on mobile/desktop often?
+            # Actually, '/status/' in the URL is the best bet if we can get it.
+            
+            # Current nodriver usage: self.page.target.url might differ.
+            # Let's try to fetch a known element unique to feed vs detail.
+            
+            # Feed usually has the "What is happening?!" compose box at top (on desktop).
+            # Detail has the tweet focused.
+            
+            # Best reliable way: Check if URL contains "/status/"
+            current_url = await self.page.evaluate("window.location.href")
+            if "/status/" in current_url:
+                return "DETAIL"
+            elif "home" in current_url or "x.com" == current_url.strip("/"):
+                return "FEED"
+            
+            return "UNKNOWN"
+
+        except Exception as e:
+            log.warning(f"Error checking page state: {e}")
+            return "UNKNOWN"
+
+    async def ensure_feed_page(self) -> None:
+        """
+        Ensures the browser is on the main feed page.
+        If in DETAIL, goes back. If UNKNOWN, navigates to home.
+        """
+        state = await self.get_current_page_state()
+        if state == "FEED":
+            return
+        
+        if state == "DETAIL":
+            log.info("Currently in DETAIL view. Going back to feed.")
+            await self.go_back()
+            # Double check
+            await asyncio.sleep(2)
+            if await self.get_current_page_state() == "FEED":
+                return
+        
+        # Fallback: Force navigate
+        log.info("State mismatch or unknown. Forcing navigation to Home.")
+        await self.goto_target(X_URL)
+
+
     async def go_back(self) -> None:
         if isinstance(self.page, uc.Tab):
             await self.page.back()
@@ -106,6 +168,54 @@ class XBrowser(BaseBrowser):
         except Exception as e:
             log.error(f"Failed to interact with tweet {index}: {e}")
 
+    # --- Advanced Navigation ---
+    async def smart_scroll_to(self, element: uc.Element) -> None:
+        """
+        Scrolls the element into view using smooth behavior and centers it.
+        Adds a small stochastic delay to simulate eye tracking.
+        """
+        if not self.page:
+            return
+        try:
+            # Use JS to scroll smoothly to center
+            # We need to act on the element handle. In nodriver, element is an Element object
+            # which has access to the node. We can execute script on it.
+            # self.page.evaluate behaves globally, but we can pass the element?
+            # nodriver's element.scroll_into_view() calls remote method.
+            # Let's try to inject a custom scroll first if possible, or fallback to default but with delay.
+            
+            # Using browser Native 'scrollIntoView' via apply
+            # This is cleaner than raw JS evaluation string construction if supported.
+            await element.apply("scrollIntoView({behavior: 'smooth', block: 'center', inline: 'nearest'})")
+            
+            # Simulated "Eye Tracking" pause
+            await asyncio.sleep(random.uniform(0.5, 1.2))
+            
+        except Exception as e:
+            log.warning(f"Smart scroll failed: {e}. Falling back to default.")
+            try:
+                await element.scroll_into_view()
+            except Exception:
+                pass
+
+    async def scroll_comments(self, scrolls: int = 3) -> None:
+        """
+        Performs smooth gradual scrolls to read comments/replies.
+        """
+        if not self.page:
+            return
+        
+        log.info("Browsing comments section...")
+        for _ in range(scrolls):
+            try:
+                # Random scroll amount
+                amount = random.randint(300, 600)
+                await self.page.evaluate(f"window.scrollBy({{top: {amount}, behavior: 'smooth'}})")
+                await asyncio.sleep(random.uniform(1.5, 3.0))
+            except Exception as e:
+                log.debug(f"Comment scroll error: {e}")
+                break
+
     async def load_tweets(self) -> None:
         if (self.page is None) or (self.browser is None):
             return
@@ -131,8 +241,18 @@ class XBrowser(BaseBrowser):
                     'button[data-testid="like"]', timeout=3
                 )
                 if like_btn:
+                    # Realistic Interaction Sequence
+                    await self.smart_scroll_to(like_btn)
+                    
+                    # Think time / Hesitation
+                    await asyncio.sleep(random.uniform(1.0, 3.0))
+                    
                     await like_btn.click()
                     log.info("Action: Liked tweet.")
+                    
+                    # Post-action micro-pause
+                    await asyncio.sleep(random.uniform(0.5, 1.5))
+                    
                     try:
                         self.increment_metric("likes")
                     except Exception as e:
@@ -150,14 +270,19 @@ class XBrowser(BaseBrowser):
                     'button[data-testid="retweet"]', timeout=3
                 )
                 if retweet_menu_btn:
+                    await self.smart_scroll_to(retweet_menu_btn)
+                    await asyncio.sleep(random.uniform(1.0, 2.5))
                     await retweet_menu_btn.click()
+                    
                     await asyncio.sleep(0.5)
                     confirm_btn = await self.page.select(
                         'div[data-testid="retweetConfirm"]', timeout=3
                     )
                     if confirm_btn:
+                        await asyncio.sleep(random.uniform(0.8, 1.5))
                         await confirm_btn.click()
                         log.info("Action: Reposted tweet.")
+                        await asyncio.sleep(random.uniform(0.5, 1.5))
                         try:
                             self.increment_metric("reposts")
                         except Exception as e:
@@ -171,20 +296,32 @@ class XBrowser(BaseBrowser):
     async def comment_current_tweet(self, text: str) -> bool:
         if isinstance(self.page, uc.Tab):
             try:
+                # Find input area
                 input_area: uc.Element = await self.page.select(
                     'div[data-testid="tweetTextarea_0"]', timeout=3
                 )
                 if input_area:
-                    await input_area.scroll_into_view()
+                    # Scroll to it
+                    await self.smart_scroll_to(input_area)
+                    await asyncio.sleep(random.uniform(1.5, 4.0)) # longer think time for typing
+                    
                     await input_area.click()
+                    await asyncio.sleep(random.uniform(0.5, 1.0))
+                    
+                    # Type gracefully? nodriver send_keys is fast. 
+                    # We can assume pasting or fast typing for now, or chunk it if needed.
                     await input_area.send_keys(text)
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(random.uniform(1.0, 3.0)) # review time
+                    
                     post_btn: uc.Element = await self.page.select(
                         'button[data-testid="tweetButtonInline"]', timeout=3
                     )
                     if post_btn:
+                        await self.smart_scroll_to(post_btn) # ensure button is visible
+                        await asyncio.sleep(random.uniform(0.5, 1.5))
                         await post_btn.click()
                         log.info("Action: Replied to tweet.")
+                        await asyncio.sleep(random.uniform(1.0, 2.0))
                         try:
                             self.increment_metric("replies")
                         except Exception as e:
@@ -202,15 +339,18 @@ class XBrowser(BaseBrowser):
                     'button[data-testid="retweet"]', timeout=3
                 )
                 if retweet_menu_btn:
+                    await self.smart_scroll_to(retweet_menu_btn)
+                    await asyncio.sleep(random.uniform(1.0, 2.0))
                     await retweet_menu_btn.click()
                     await asyncio.sleep(0.5)
+                    
                     # 2. Click "Quote" from the dropdown
                     quote_btn = await self.page.select(
                         'a[href="/compose/post"]', timeout=3
                     )
                     if quote_btn:
                         await quote_btn.click()
-                        await asyncio.sleep(1)
+                        await asyncio.sleep(1.5)
 
                         # 3. Type text
                         # Focus input area
@@ -219,16 +359,20 @@ class XBrowser(BaseBrowser):
                         )
                         if input_area:
                             await input_area.click()
+                            await asyncio.sleep(random.uniform(0.5, 1.0))
                             await input_area.send_keys(text)
-                            await asyncio.sleep(1)
+                            await asyncio.sleep(random.uniform(1.5, 3.0))
 
                             # 4. Click Post
                             post_btn = await self.page.select(
                                 'button[data-testid="tweetButton"]', timeout=3
                             )
                             if post_btn:
+                                await self.smart_scroll_to(post_btn)
+                                await asyncio.sleep(random.uniform(0.5, 1.5))
                                 await post_btn.click()
                                 log.info("Action: Quoted tweet.")
+                                await asyncio.sleep(random.uniform(1.0, 2.0))
                                 try:
                                     self.increment_metric("quotes")
                                 except Exception as e:

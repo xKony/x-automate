@@ -41,7 +41,7 @@ class MistralClient:
             log.error("Environment variable MISTRAL_API_KEY not set.")
             return
         masked_key = (
-            f"{api_key[:4]}...{api_key[-4:]}"
+            f"***{api_key[-4:]}"
             if api_key and len(api_key) > 8
             else "INVALID"
         )
