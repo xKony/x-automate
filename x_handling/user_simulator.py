@@ -1,8 +1,9 @@
 import asyncio
+import importlib
 import random
 import sys
 import nodriver as uc
-from typing import List, Set, Optional
+from typing import List, Set, Optional, Dict, Any
 
 # Only available on Windows, but user is on Windows
 try:
@@ -10,6 +11,7 @@ try:
 except ImportError:
     msvcrt = None
 
+import config
 from config import (
     PROB_LIKE,
     PROB_REPOST,
@@ -36,6 +38,38 @@ class UserSimulator:
         self.max_actions: int = max_actions
         # Keep track of tweets processed in this session to prevent loops
         self.processed_cache: Set[int] = set()
+        # Store config values as instance attributes for dynamic reloading
+        self._load_config_values()
+
+    def _load_config_values(self) -> None:
+        """Load probability values from config module into instance attributes."""
+        self.prob_like = config.PROB_LIKE
+        self.prob_repost = config.PROB_REPOST
+        self.prob_reply = config.PROB_REPLY
+        self.prob_quote = config.PROB_QUOTE
+        self.prob_like_comment = config.PROB_LIKE_COMMENT
+        self.prob_follow = config.PROB_FOLLOW
+        self.prob_who_to_follow = config.PROB_WHO_TO_FOLLOW
+        self.max_interactions_per_thread = config.MAX_INTERACTIONS_PER_THREAD
+
+    def _reload_config(self) -> None:
+        """
+        Reload config module and update instance probability values.
+        Allows live editing of config.py during pause for debugging.
+        """
+        try:
+            importlib.reload(config)
+            self._load_config_values()
+            log.info("[CONFIG] Reloaded config.py successfully!")
+            log.info(f"  PROB_LIKE: {self.prob_like}")
+            log.info(f"  PROB_REPOST: {self.prob_repost}")
+            log.info(f"  PROB_REPLY: {self.prob_reply}")
+            log.info(f"  PROB_QUOTE: {self.prob_quote}")
+            log.info(f"  PROB_LIKE_COMMENT: {self.prob_like_comment}")
+            log.info(f"  PROB_FOLLOW: {self.prob_follow}")
+            log.info(f"  PROB_WHO_TO_FOLLOW: {self.prob_who_to_follow}")
+        except Exception as e:
+            log.error(f"[CONFIG] Failed to reload config: {e}")
 
     async def _check_debug_commands(self) -> None:
         """
@@ -67,6 +101,8 @@ class UserSimulator:
                         if msvcrt.kbhit():
                             resume_key = msvcrt.getch().decode("utf-8", errors="ignore").lower()
                             if resume_key == "r":
+                                # Reload config on resume for live debugging
+                                self._reload_config()
                                 log.info("[DEBUG] RESUME command received. Continuing simulation...")
                                 print("\n" + "="*50)
                                 print("SIMULATION RESUMED")
@@ -186,14 +222,14 @@ class UserSimulator:
             total_scrolls = random.randint(2, 5)
             
             for _ in range(total_scrolls):
-                if interactions_count >= MAX_INTERACTIONS_PER_THREAD:
+                if interactions_count >= self.max_interactions_per_thread:
                     log.debug("Max thread interactions reached. Just scrolling now.")
                 
                 # 1. Scroll
                 await self.browser.scroll_comments(scrolls=1)
                 
                 # 2. Check visible comments for interactions if under limit
-                if interactions_count < MAX_INTERACTIONS_PER_THREAD:
+                if interactions_count < self.max_interactions_per_thread:
                     visible_comments = await self.browser.collect_visible_comments()
                     
                     # Shuffle to pick random ones if multiple are visible
@@ -202,18 +238,18 @@ class UserSimulator:
                         
                         # Process a subset to avoid doing too much per scroll
                         for comment in visible_comments[:3]: 
-                             if interactions_count >= MAX_INTERACTIONS_PER_THREAD:
+                             if interactions_count >= self.max_interactions_per_thread:
                                  break
                              
                              # Try Like Comment
-                             if random.random() < PROB_LIKE_COMMENT:
+                             if random.random() < self.prob_like_comment:
                                  if await self.browser.like_comment(comment):
                                      interactions_count += 1
                                      await asyncio.sleep(random.uniform(1.0, 2.0))
                                      continue # Don't follow same user immediately if just liked?
                              
                              # Try Follow User
-                             if random.random() < PROB_FOLLOW:
+                             if random.random() < self.prob_follow:
                                  # We need to find the user link inside the comment
                                  # Usually it's the avatar link or name link: a[href*="/"]
                                  # Standard: User-Name or Avatar usually has href.
@@ -237,31 +273,31 @@ class UserSimulator:
         r: float = random.random()
         performed = False
 
-        if r < PROB_LIKE:
+        if r < self.prob_like:
             await self.browser.like_current_tweet()
             performed = True
             log.info(f"Action {current_iter}: Liked.")
 
-        elif r < PROB_LIKE + PROB_REPOST:
+        elif r < self.prob_like + self.prob_repost:
             await self.browser.repost_tweet()
             performed = True
             log.info(f"Action {current_iter}: Reposted.")
 
-        elif r < PROB_LIKE + PROB_REPOST + PROB_REPLY:
+        elif r < self.prob_like + self.prob_repost + self.prob_reply:
             reply_text = await self.llm.get_response(tweet_text)
             if reply_text:
                 await self.browser.comment_current_tweet(reply_text)
                 performed = True
                 log.info(f"Action {current_iter}: Replied.")
 
-        elif r < PROB_LIKE + PROB_REPOST + PROB_REPLY + PROB_QUOTE:
+        elif r < self.prob_like + self.prob_repost + self.prob_reply + self.prob_quote:
             quote_text = await self.llm.get_response(tweet_text)
             if quote_text:
                 await self.browser.quote_current_tweet(quote_text)
                 performed = True
                 log.info(f"Action {current_iter}: Quoted.")
         
-        elif r < PROB_LIKE + PROB_REPOST + PROB_REPLY + PROB_QUOTE + PROB_WHO_TO_FOLLOW:
+        elif r < self.prob_like + self.prob_repost + self.prob_reply + self.prob_quote + self.prob_who_to_follow:
              # This action is independent of the current tweet but fits the probability model
              if await self.browser.process_who_to_follow():
                  performed = True

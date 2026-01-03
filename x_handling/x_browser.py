@@ -535,41 +535,117 @@ class XBrowser(BaseBrowser):
         return False
 
     async def comment_current_tweet(self, text: str) -> bool:
-        if isinstance(self.page, uc.Tab):
-            try:
-                # Find input area
-                input_area: uc.Element = await self.page.select(
-                    'div[data-testid="tweetTextarea_0"]', timeout=3
-                )
-                if input_area:
-                    # Scroll to it
-                    await self.smart_scroll_to(input_area)
-                    await asyncio.sleep(random.uniform(1.5, 4.0)) # longer think time for typing
-                    
-                    await input_area.click()
-                    await asyncio.sleep(random.uniform(0.5, 1.0))
-                    
-                    # Type gracefully? nodriver send_keys is fast. 
-                    # We can assume pasting or fast typing for now, or chunk it if needed.
-                    await input_area.send_keys(text)
-                    await asyncio.sleep(random.uniform(1.0, 3.0)) # review time
-                    
-                    post_btn: uc.Element = await self.page.select(
-                        'button[data-testid="tweetButtonInline"]', timeout=3
-                    )
+        """
+        Reply to the current tweet using the Reply button flow.
+        Steps:
+        1. Click the Reply button (aria-label="Reply")
+        2. Wait for the reply modal/dialog to load
+        3. Find the textarea and type the reply
+        4. Click the submit button (data-testid="tweetButton")
+        """
+        if not isinstance(self.page, uc.Tab):
+            return False
+            
+        try:
+            # 1. Find and click the Reply button
+            reply_btn = None
+            reply_selectors = [
+                'button[aria-label="Reply"]',
+                '[aria-label="Reply"]',
+                'button[data-testid="reply"]',
+                '[data-testid="reply"]',
+            ]
+            
+            for selector in reply_selectors:
+                try:
+                    reply_btn = await self.page.select(selector, timeout=3)
+                    if reply_btn:
+                        log.debug(f"Found Reply button with selector: {selector}")
+                        break
+                except Exception:
+                    continue
+            
+            if not reply_btn:
+                log.debug("Reply button not found on page")
+                return False
+            
+            # Click the Reply button
+            await self.smart_scroll_to(reply_btn)
+            await asyncio.sleep(random.uniform(0.5, 1.5))
+            await reply_btn.click()
+            log.debug("Clicked Reply button, waiting for modal...")
+            
+            # 2. Wait for the reply modal/dialog to load (X.com is laggy)
+            await asyncio.sleep(random.uniform(2.5, 4.0))
+            
+            # 3. Find the textarea in the modal
+            input_area = None
+            input_selectors = [
+                'div[data-testid="tweetTextarea_0"]',
+                '[data-testid="tweetTextarea_0"]',
+                'div[role="textbox"]',
+                '[contenteditable="true"]',
+            ]
+            
+            for selector in input_selectors:
+                try:
+                    input_area = await self.page.select(selector, timeout=3)
+                    if input_area:
+                        log.debug(f"Found input area with selector: {selector}")
+                        break
+                except Exception:
+                    continue
+            
+            if not input_area:
+                log.debug("Reply input area not found in modal")
+                return False
+            
+            # Click to focus and type
+            await input_area.click()
+            await asyncio.sleep(random.uniform(0.5, 1.0))
+            await input_area.send_keys(text)
+            log.debug(f"Typed reply text: {text[:30]}...")
+            
+            # Wait for review (simulating human behavior)
+            await asyncio.sleep(random.uniform(1.5, 3.0))
+            
+            # 4. Find and click the submit button
+            post_btn = None
+            post_selectors = [
+                'button[data-testid="tweetButton"]',
+                '[data-testid="tweetButton"]',
+                'button[data-testid="tweetButtonInline"]',
+            ]
+            
+            for selector in post_selectors:
+                try:
+                    post_btn = await self.page.select(selector, timeout=3)
                     if post_btn:
-                        await self.smart_scroll_to(post_btn) # ensure button is visible
-                        await asyncio.sleep(random.uniform(0.5, 1.5))
-                        await post_btn.click()
-                        log.info("Action: Replied to tweet.")
-                        await asyncio.sleep(random.uniform(1.0, 2.0))
-                        try:
-                            self.increment_metric("replies")
-                        except Exception as e:
-                             log.warning(f"Failed to increment reply metric: {e}")
-                        return True
+                        log.debug(f"Found post button with selector: {selector}")
+                        break
+                except Exception:
+                    continue
+            
+            if not post_btn:
+                log.debug("Post/Reply button not found")
+                return False
+            
+            await self.smart_scroll_to(post_btn)
+            await asyncio.sleep(random.uniform(0.5, 1.0))
+            await post_btn.click()
+            log.info("Action: Replied to tweet.")
+            
+            # Wait for post to complete
+            await asyncio.sleep(random.uniform(1.5, 2.5))
+            
+            try:
+                self.increment_metric("replies")
             except Exception as e:
-                log.warning(f"Failed to reply: {e}")
+                log.debug(f"Failed to increment reply metric: {e}")
+            return True
+            
+        except Exception as e:
+            log.warning(f"Failed to reply: {e}")
         return False
 
     async def quote_current_tweet(self, text: str) -> bool:
