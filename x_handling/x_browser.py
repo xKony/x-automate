@@ -56,9 +56,8 @@ class XBrowser(BaseBrowser):
                     self.save_account_metadata(handle)
                 except Exception as e:
                     log.warning(f"Failed saving account metadata: {e}")
-        except Exception:
-            # non-fatal
-            pass
+        except Exception as e:
+            log.debug(f"Non-fatal error getting account handle: {e}")
         return self.page
 
     async def get_current_page_state(self) -> str:
@@ -153,7 +152,7 @@ class XBrowser(BaseBrowser):
         except Exception as e:
             log.error(f"Could not click tweet: {e}")
 
-    async def process_single_tweet(self, div: uc.Element, index: int) -> None:
+    async def process_single_tweet(self, div: uc.Element, index: int = 0) -> None:
         text: str = div.text_all.strip()
         current_tweet = div.parent if div.parent else div
         log.debug(f"\nTweet {index}: {text} \n")
@@ -171,32 +170,25 @@ class XBrowser(BaseBrowser):
     # --- Advanced Navigation ---
     async def smart_scroll_to(self, element: uc.Element) -> None:
         """
-        Scrolls the element into view using smooth behavior and centers it.
-        Adds a small stochastic delay to simulate eye tracking.
+        Scrolls the element into view using native JS smooth scroll.
+        Centers the element to ensure visibility.
         """
-        if not self.page:
+        if not element or not self.page:
             return
         try:
-            # Use JS to scroll smoothly to center
-            # We need to act on the element handle. In nodriver, element is an Element object
-            # which has access to the node. We can execute script on it.
-            # self.page.evaluate behaves globally, but we can pass the element?
-            # nodriver's element.scroll_into_view() calls remote method.
-            # Let's try to inject a custom scroll first if possible, or fallback to default but with delay.
-            
-            # Using browser Native 'scrollIntoView' via apply
-            # This is cleaner than raw JS evaluation string construction if supported.
-            await element.apply("scrollIntoView({behavior: 'smooth', block: 'center', inline: 'nearest'})")
-            
-            # Simulated "Eye Tracking" pause
+            # Applying scrollIntoView with block: 'center' usually handles both up and down directions.
+            await element.apply(
+                "this.scrollIntoView({behavior: 'smooth', block: 'center', inline: 'nearest'})"
+            )
+            # Random "eye-tracking" delay
             await asyncio.sleep(random.uniform(0.5, 1.2))
-            
         except Exception as e:
-            log.warning(f"Smart scroll failed: {e}. Falling back to default.")
+            log.debug(f"Smart scroll failed: {e}")
+            # Fallback
             try:
                 await element.scroll_into_view()
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug(f"Smart scroll fallback failed: {e}")
 
     async def scroll_comments(self, scrolls: int = 3) -> None:
         """
@@ -215,6 +207,255 @@ class XBrowser(BaseBrowser):
             except Exception as e:
                 log.debug(f"Comment scroll error: {e}")
                 break
+
+    async def collect_visible_comments(self) -> List[uc.Element]:
+        """
+        Collects visible comment/reply tweets from the current view.
+        We look for 'article' tags or divs with specific testids that represent replies.
+        Detailed view replies usually have data-testid="tweet".
+        """
+        if not self.page:
+            return []
+        try:
+            # "tweet" testid is used for both main tweet and replies in the thread list
+            # We might want to filter out the main tweet if possible, but the main tweet is usually
+            # at the top and might be scrolled past.
+            comments = await self.page.select_all('article[data-testid="tweet"]')
+            
+            # Simple visibility check or coordinate check could be added if needed,
+            # but select_all returns what's in DOM (nodriver might return all).
+            # We'll rely on the caller to pick ones that look like replies.
+            return comments
+        except Exception as e:
+            log.debug(f"Error collecting comments: {e}")
+            return []
+
+    async def smooth_scroll_by(self, amount: int) -> None:
+        """
+        Scrolls the window by a specific amount using native smooth behavior.
+        """
+        if not self.page:
+            return
+        try:
+             await self.page.evaluate(f"window.scrollBy({{top: {amount}, behavior: 'smooth'}})")
+             # Wait a bit for the scroll to actually happen
+             await asyncio.sleep(random.uniform(0.8, 1.5))
+        except Exception as e:
+            log.debug(f"Smooth scroll failed: {e}")
+
+    async def like_comment(self, comment_element: uc.Element) -> bool:
+        """
+        Likes a specific comment element.
+        Uses multiple selector fallbacks for robustness.
+        """
+        try:
+            # Try multiple selectors - X.com structure varies
+            like_btn = None
+            selectors = [
+                'button[data-testid="like"]',
+                'div[data-testid="like"]',
+                '[data-testid="like"]',
+            ]
+            
+            for selector in selectors:
+                try:
+                    like_btn = await comment_element.query_selector(selector)
+                    if like_btn:
+                        log.debug(f"Found like button with selector: {selector}")
+                        break
+                except Exception:
+                    continue
+            
+            if not like_btn:
+                log.debug("Like button not found in comment element")
+                return False
+            
+            # Check if already liked (button might have different state)
+            try:
+                aria_pressed = await like_btn.apply("return this.getAttribute('aria-pressed')")
+                if aria_pressed == "true":
+                    log.debug("Comment already liked, skipping")
+                    return False
+            except Exception:
+                pass  # Continue if we can't check state
+            
+            # STRICT SCROLL before interaction
+            await self.smart_scroll_to(like_btn)
+            await asyncio.sleep(random.uniform(0.5, 1.5))
+            await like_btn.click()
+            log.info("Action: Liked a comment.")
+            try:
+                self.increment_metric("likes")
+            except Exception as e:
+                log.debug(f"Failed to increment like metric: {e}")
+            return True
+            
+        except Exception as e:
+            log.debug(f"Failed to like comment: {e}")
+        return False
+
+    async def follow_user_via_hover(self, user_element: uc.Element) -> bool:
+        """
+        Hovers over a user link/element to trigger the hover card, then clicks Follow.
+        """
+        if not self.page:
+            return False
+        
+        try:
+            # 1. Scroll and Hover
+            await self.smart_scroll_to(user_element)
+            await asyncio.sleep(random.uniform(0.5, 1.0))
+            
+            # nodriver mouse move to trigger hover
+            await user_element.mouse_move()
+            log.debug("Hovering over user element...")
+            
+            # 2. Wait for Hover Card to appear
+            await asyncio.sleep(random.uniform(2.0, 3.5))
+            
+            # X.com uses capital H in "HoverCard" (verified via live DOM inspection)
+            hover_card = None
+            hover_selectors = [
+                'div[data-testid="HoverCard"]',
+                '[data-testid="HoverCard"]',
+                'div[data-testid="hoverCard"]',  # Fallback for older/different versions
+                '[data-testid="hoverCardParent"]',
+            ]
+            
+            for selector in hover_selectors:
+                try:
+                    hover_card = await self.page.select(selector, timeout=2)
+                    if hover_card:
+                        log.debug(f"Found hover card with selector: {selector}")
+                        break
+                except Exception:
+                    continue
+            
+            if not hover_card:
+                log.debug("Hover card did not appear after waiting.")
+                return False
+            
+            # 3. Find Follow Button inside card
+            follow_btn = None
+            follow_selectors = [
+                'button[aria-label^="Follow"]',
+                '[data-testid*="follow"]',
+                'button[data-testid*="follow"]',
+            ]
+            
+            for selector in follow_selectors:
+                try:
+                    follow_btn = await hover_card.query_selector(selector)
+                    if follow_btn:
+                        log.debug(f"Found follow button with selector: {selector}")
+                        break
+                except Exception:
+                    continue
+            
+            if not follow_btn:
+                log.debug("Follow button not found in hover card.")
+                return False
+            
+            # Check if already following
+            txt = follow_btn.text_all.lower() if follow_btn.text_all else ""
+            if "following" in txt or "unfollow" in txt:
+                log.debug("Already following user.")
+                return False
+
+            # 4. Click Follow
+            await self.smart_scroll_to(follow_btn)
+            await asyncio.sleep(random.uniform(0.5, 1.2))
+            await follow_btn.click()
+            log.info("Action: Followed user via hover.")
+            try:
+                self.increment_metric("follows")
+            except Exception as e:
+                log.debug(f"Failed to increment follow metric: {e}")
+            return True
+            
+        except Exception as e:
+            log.debug(f"Hover follow failed: {e}")
+        
+        return False
+
+    async def process_who_to_follow(self) -> bool:
+        """
+        Checks the 'Who to follow' sidebar and follows a random user.
+        """
+        if not self.page:
+            return False
+            
+        try:
+            # Try multiple selectors for the sidebar section
+            aside = None
+            sidebar_selectors = [
+                'aside[aria-label="Who to follow"]',
+                '[aria-label="Who to follow"]',
+                'section[aria-label*="follow"]',
+                'div[data-testid="sidebarColumn"] aside',
+            ]
+            
+            for selector in sidebar_selectors:
+                try:
+                    aside = await self.page.select(selector, timeout=2)
+                    if aside:
+                        log.debug(f"Found 'Who to follow' section with selector: {selector}")
+                        break
+                except Exception:
+                    continue
+            
+            if not aside:
+                log.debug("'Who to follow' sidebar section not found.")
+                return False
+            
+            # Find follow buttons within this aside
+            buttons = []
+            button_selectors = [
+                'button[aria-label^="Follow"]',
+                '[data-testid*="follow"]',
+                'button[data-testid*="follow"]',
+            ]
+            
+            for selector in button_selectors:
+                try:
+                    found_buttons = await aside.query_selector_all(selector)
+                    if found_buttons:
+                        buttons.extend(found_buttons)
+                except Exception:
+                    continue
+            
+            # Filter to only "Follow" buttons (not "Following")
+            valid_buttons = []
+            for btn in buttons:
+                try:
+                    txt = btn.text_all.lower() if btn.text_all else ""
+                    if "following" not in txt and "unfollow" not in txt:
+                        valid_buttons.append(btn)
+                except Exception:
+                    continue
+            
+            if not valid_buttons:
+                log.debug("No valid 'Follow' buttons found in sidebar.")
+                return False
+            
+            target_btn = random.choice(valid_buttons)
+            
+            await self.smart_scroll_to(target_btn)
+            await asyncio.sleep(random.uniform(1.0, 2.0))
+            await target_btn.click()
+            
+            log.info("Action: Followed a user from 'Who to follow'.")
+            try:
+                self.increment_metric("follows")
+            except Exception as e:
+                log.debug(f"Failed to increment follow metric: {e}")
+            return True
+                
+        except Exception as e:
+            log.debug(f"Who-to-follow action failed: {e}")
+            
+        return False
+
 
     async def load_tweets(self) -> None:
         if (self.page is None) or (self.browser is None):
@@ -441,6 +682,8 @@ class XBrowser(BaseBrowser):
     async def get_account_handle(self) -> Optional[str]:
         if not self.page:
             return None
+        
+        # Method 1: Check Account Switcher Button (Text parsing)
         try:
             el = await self.page.select(
                 'button[data-testid="SideNav_AccountSwitcher_Button"]', timeout=3
@@ -451,13 +694,38 @@ class XBrowser(BaseBrowser):
 
                 if match:
                     handle = match.group(1)
-                    log.debug(f"Found account handle: {handle}")
+                    log.debug(f"Found account handle (Method 1): {handle}")
                     return handle
 
                 log.debug(f"Handle pattern not found in text: {full_text}")
 
         except Exception as e:
-            log.debug(f"Could not read account handle: {e}")
+            log.debug(f"Method 1 (AccountSwitcher) failed: {e}")
+
+        # Method 2: Check Profile Link in Sidebar (Href parsing)
+        try:
+            profile_link = await self.page.select(
+                'a[data-testid="AppTabBar_Profile_Link"]', timeout=3
+            )
+            if profile_link:
+                # Use JS execution to robustly get the href attribute
+                href = await profile_link.apply("return this.getAttribute('href')")
+                if href:
+                     # href usually looks like "https://x.com/username" or "/username"
+                     # We want "username" and prepend @
+                     
+                     # Remove trailing slashes
+                     href = href.rstrip("/")
+                     parts = href.split("/")
+                     if parts:
+                         username = parts[-1]
+                         if username and username.lower() not in ["home", "explore", "notifications"]:
+                             handle = f"@{username}"
+                             log.debug(f"Found account handle (Method 2): {handle}")
+                             return handle
+        except Exception as e:
+            log.debug(f"Method 2 (ProfileLink) failed: {e}")
+
         return None
 
     def save_account_metadata(self, handle: str) -> None:

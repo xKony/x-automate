@@ -102,99 +102,77 @@ class VpnManager:
 
     def connect_to_specific_vpn(self, vpn_preferences: Dict[str, Any]) -> bool:
         """
-        Attempts to connect to a specific VPN server or location based on preferences.
-
-        Args:
-            vpn_preferences (Dict[str, Any]): Dictionary with keys:
-                - 'specific_server' (Optional[str]): e.g., "Poland #232"
-                - 'location' (Optional[str]): e.g., "Poland"
-                - 'fallback_locations' (Optional[List[str]]): e.g., ["Germany", "United States"]
-
-        Returns:
-            bool: True if connection successful, False otherwise.
+        Attempts to connect to a specific VPN location using country/region code.
+        Per user request, we prioritize 'location' (Country/Region) over specific servers
+        due to reliability issues with specific server IDs.
         """
-        specific_server: Optional[str] = vpn_preferences.get("specific_server")
+        # We ignore 'specific_server' as it is deemed unreliable.
+        # specific_server: Optional[str] = vpn_preferences.get("specific_server")
+        
         location: Optional[str] = vpn_preferences.get("location")
         fallback_locations: List[str] = vpn_preferences.get("fallback_locations", [])
         
-        # Combine global fallbacks if local ones are exhausted or to augment them?
-        # User stuck to "server list or if its unavailable fall back for another one".
-        # We will append global fallbacks to the end.
+        # Merge global fallbacks
         if config.VPN_FALLBACK_LIST:
              for loc in config.VPN_FALLBACK_LIST:
                  if loc not in fallback_locations:
                      fallback_locations.append(loc)
 
-        # 1. Try Specific Server
-        if specific_server:
-            self.log.info(f"Attempting to connect to specific server: {specific_server}")
-            if self._run_nordvpn_command(f"connect \"{specific_server}\""):
-                self.log.info(f"Successfully connected to {specific_server}")
-                return True
-            self.log.warning(f"Failed to connect to specific server: {specific_server}")
-
-        # 2. Try Specific Location (Country)
+        # 1. Try Specific Location (Country/Group)
+        # Command syntax for Windows: nordvpn -c -g "United States"
         if location:
             self.log.info(f"Attempting to connect to location: {location}")
-            if self._run_nordvpn_command(f"connect \"{location}\""):
+            # We use -g for group/country
+            if self._run_nordvpn_command(f'-c -g "{location}"'):
                 self.log.info(f"Successfully connected to location: {location}")
+                # Wait for adapter to settle
+                time.sleep(5)
                 return True
             self.log.warning(f"Failed to connect to location: {location}")
 
-        # 3. Try Fallbacks
+        # 2. Try Fallbacks
         for fallback in fallback_locations:
             self.log.info(f"Attempting fallback location: {fallback}")
-            if self._run_nordvpn_command(f"connect \"{fallback}\""):
+            if self._run_nordvpn_command(f'-c -g "{fallback}"'):
                 self.log.info(f"Successfully connected to fallback: {fallback}")
+                # Wait for adapter to settle
+                time.sleep(5)
                 return True
             self.log.warning(f"Failed to connect to fallback: {fallback}")
 
         self.log.error("All specific VPN connection attempts failed.")
         return False
 
-    def _run_nordvpn_command(self, argument: str) -> bool:
+    def _run_nordvpn_command(self, argument_str: str) -> bool:
         """
         Executes a NordVPN CLI command.
-
-        Args:
-            argument (str): The argument string for nordvpn command (e.g. 'connect "Poland #232"')
-
-        Returns:
-            bool: True if the command succeeded, False otherwise.
-        """
-        system = platform.system()
-        # Different base commands based on OS?
-        # Usually 'nordvpn' is in PATH on Linux/Mac.
-        # On Windows, it's often 'nordvpn' if added to path, or specific executable.
-        # Original code used 'nordvpn-switcher' library which handles some of this, 
-        # but for specific server we need direct CLI or sophisticated wrapper use.
-        # Assuming 'nordvpn' is available in CLI.
         
+        Args:
+            argument_str (str): The arguments to pass to the executable (e.g. '-c -g "United States"')
+        """
         # Get absolute path from the switcher settings (which auto-detected it)
         exe_path = self._switcher.settings.exe_path
         
-        # Quote the executable path to handle spaces (e.g. "Program Files")
-        cmd = f'"{exe_path}" {argument}'
-        
-        # On Windows, the CLI might be different or require full path if not in env.
-        # But let's try standard 'nordvpn' first.
+        # Construct the full command: "Path\To\NordVPN.exe" -c -g "Region"
+        # We assume argument_str handles its own internal quoting for values.
+        cmd = f'"{exe_path}" {argument_str}'
         
         self.log.debug(f"Executing command: {cmd}")
         try:
-            # shell=True can be risky but needed for some path resolution on Windows if not configured perfectly.
-            # Using subprocess.run
+            # shell=True is often needed on Windows for path resolution if not using list args
+            # We use a single string command here.
             result = subprocess.run(
                 cmd,
                 shell=True,
                 capture_output=True,
                 text=True,
-                check=False # We check return code manually
+                check=False
             )
             
             if result.returncode == 0:
-                # Some versions of nordvpn CLI return 0 even on failure messages, check stdout
-                # Heuristic check
+                # Heuristic check for success message or failure keywords
                 output = result.stdout.lower()
+                # NordVPN CLI sometimes prints errors to stdout
                 if "whoops" in output or "failure" in output or "error" in output:
                      self.log.warning(f"NordVPN command appeared to fail: {result.stdout.strip()}")
                      return False

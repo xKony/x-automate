@@ -10,7 +10,6 @@
       "quotes": 18
     },
     "vpn_preferences": {
-      "specific_server": "Poland #232",
       "location": "Poland",
       "fallback_locations": [
         "Germany",
